@@ -1,0 +1,84 @@
+
+##### Carregando os pacotes necessarios
+
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(lmtest)
+
+##### Carregando a base de dados e fazendo ajustes
+
+data <- df_final
+
+data$Date <- as.Date(paste0(data$Date, "-01"), format = "%Y-%m-%d")
+
+##### Definindo variaveis
+
+data <- data %>%
+  mutate(
+    delta_seguro_desemprego = c(NA, diff(seguro_desemprego)),
+    delta_decimo_terceiro = c(NA, diff(decimo_terceiro)),
+    delta_fgts = c(NA, diff(fgts)),
+    delta_inss = c(NA, diff(inss)),
+    delta_empregos = c(NA, diff(empregos)),
+    delta_seguridade_social = c(NA, diff(seguridade_social)),
+    delta_vagas_de_emprego = c(NA, diff(vagas_de_emprego)),
+    delta_taxa_desemprego = c(NA, diff(taxa_desemprego))
+  )
+
+# Remover a primeira linha com valores NA nas diferenças
+data <- na.omit(data)
+
+# Modelo de regressão incluindo os níveis e as diferenças
+modelo_mixed <- lm(delta_taxa_desemprego ~ seguro_desemprego + delta_seguro_desemprego + 
+                     decimo_terceiro + delta_decimo_terceiro + 
+                     fgts + delta_fgts + 
+                     inss + delta_inss + 
+                     empregos + delta_empregos + 
+                     seguridade_social + delta_seguridade_social + 
+                     vagas_de_emprego + delta_vagas_de_emprego, data = data)
+
+# Resumo do modelo
+summary(modelo_mixed)
+
+# Previsões com o modelo ajustado
+data$predicted_delta_unemployment <- predict(modelo_mixed, newdata = data)
+
+# Comparar as previsões com as diferenças reais
+ggplot(data, aes(x = Date)) +
+  geom_line(aes(y = delta_taxa_desemprego, color = "Diferença Real de Desemprego")) +
+  geom_line(aes(y = predicted_delta_unemployment, color = "Diferença Prevista de Desemprego")) +
+  labs(title = "Comparação entre Diferença Real e Prevista da Taxa de Desemprego",
+       x = "Data", y = "Diferença da Taxa de Desemprego") +
+  theme_minimal()
+
+# Avaliar a qualidade do modelo (RMSE)
+rmse <- sqrt(mean((data$delta_taxa_desemprego - data$predicted_delta_unemployment)^2))
+print(paste("RMSE:", rmse))
+
+ultimo_mes <- tail(data, 1)
+
+proximo_mes <- data.frame(
+  seguro_desemprego = ultimo_mes$seguro_desemprego,
+  delta_seguro_desemprego = 0,  
+  decimo_terceiro = ultimo_mes$decimo_terceiro,
+  delta_decimo_terceiro = 0,
+  fgts = ultimo_mes$fgts,
+  delta_fgts = 0,
+  inss = ultimo_mes$inss,
+  delta_inss = 0,
+  empregos = ultimo_mes$empregos,
+  delta_empregos = 0,
+  seguridade_social = ultimo_mes$seguridade_social,
+  delta_seguridade_social = 0,
+  vagas_de_emprego = ultimo_mes$vagas_de_emprego,
+  delta_vagas_de_emprego = 0
+)
+
+# Fazer a previsão para o próximo mês
+previsao_proximo_mes <- predict(modelo_mixed, newdata = proximo_mes)
+previsao_taxa_desemprego_proximo_mes <- (ultimo_mes$taxa_desemprego + previsao_proximo_mes)*100
+
+print(paste("Previsão da taxa de desemprego para o próximo mês:", previsao_taxa_desemprego_proximo_mes))
+
